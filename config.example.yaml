@@ -1,0 +1,69 @@
+# ============================================================
+#  微光域 LumiSphere · 配置示例
+#  复制成 config.yaml 再改：cp config.example.yaml config.yaml
+# ============================================================
+
+app:
+  name: 微光域
+  version: 0.1.0
+
+browser:
+  # 浏览器自己的数据目录（相对本文件所在目录）。
+  # 登录态、cookie、缓存全部存在这里 —— 只要不删，下次启动就不用重新登录。
+  profile_dir: data/profile
+
+  # 用哪个浏览器内核：
+  #   ""        = Playwright 自带的 Chromium（推荐，专为自动化优化，需先执行 playwright install chromium）
+  #   "chrome"  = 系统安装的 Google Chrome
+  #   "msedge"  = 系统安装的 Microsoft Edge（免下载，但在自动化下稳定性差）
+  channel: ""
+
+  # 启动后打开的第一个页面；留空或写 about:blank 就只开空白页
+  start_url: "https://www.bilibili.com"
+
+  # 浏览器窗口大小
+  width: 1366
+  height: 860
+
+  # 启动后是否立刻把窗口藏起来：AI 在后台用，不挡你的屏幕。
+  # 需要看的时候：右键托盘图标 →「显示浏览器」。设 false 就是启动即显示。
+  start_hidden: true
+
+  # 额外启动参数（一般不用改）
+  args: []
+
+server:
+  # 给刷视频插件／外部程序调用的本地小门。
+  # enabled: false 就完全不开放，纯手动使用。
+  enabled: true
+  host: 127.0.0.1
+  port: 8765
+
+# 标签页限额：防止 AI 一口气开几十个视频页把电脑拖死。
+limits:
+  max_tabs: 6
+  one_per_domain: true
+  max_per_domain: 2
+
+# 二维码/截图推送到 QQ。
+# 用法：需要登录时，右键托盘图标 →「截图发到 QQ」，手机上扫一下就完事。
+# 不想要这个功能：enabled 改成 false。
+notify:
+  enabled: false
+
+  # 本地 QQ 网关（SnowLuma 的 OneBot HTTP 接口）
+  onebot_url: "http://127.0.0.1:3000"
+
+  # 填你自己的网关 token；没设 token 就留空
+  access_token: ""
+
+  # 发给谁：private = 私聊（填 QQ 号），group = 群（填群号）
+  target_type: "private"
+  target_id: 0
+
+  # 同一个网址多久之内不重复发（秒）
+  cooldown_sec: 600
+
+# 白名单：填了域名就只允许访问这些站；留空 = 不限制。
+allow:
+  domains: []

@@ -1,0 +1,23 @@
+#!/bin/sh
+# 隐私门禁：暂存区里只要有一处像密钥 / QQ 号 / 手机号，就不许提交。
+#
+# 启用方式（每个仓库一次）：
+#   git config core.hooksPath .githooks
+#
+# 真要临时绕开：git commit --no-verify
+# （CI 那边还有一道，绕不开）
+
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+if command -v python3 >/dev/null 2>&1; then
+    PY=python3
+elif command -v python >/dev/null 2>&1; then
+    PY=python
+else
+    echo "[门禁] 找不到 python，跳过隐私检查" >&2
+    exit 0
+fi
+
+exec "$PY" "$ROOT/scripts/check_privacy.py" --staged
