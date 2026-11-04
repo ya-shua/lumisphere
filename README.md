@@ -2,6 +2,12 @@
 
 > 给 AI 一片可以自由浏览、又不会打扰你主机的专属空间。
 
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![release](https://img.shields.io/github/v/release/ya-shua/lumisphere)](https://github.com/ya-shua/lumisphere/releases)
+[![privacy](https://github.com/ya-shua/lumisphere/actions/workflows/privacy.yml/badge.svg)](https://github.com/ya-shua/lumisphere/actions/workflows/privacy.yml)
+
+**仓库**：<https://github.com/ya-shua/lumisphere>
+
 独立运行的浏览器沙箱（模式 B：本机浏览器模式）。
 启动后右下角出现托盘图标，同时弹出一个**完全独立**的浏览器窗口——
 它有自己的数据目录、自己的登录态，和你日常用的浏览器互不相干。
@@ -51,6 +57,7 @@
 | **重启浏览器** | 关掉重开，用来解决卡死/页面异常 |
 | **截图发到 QQ** | 把当前页面截个图发到你 QQ（要扫码登录时点这个最快） |
 | **打开数据目录** | 直接打开 `data/profile`，可以看/删里面的东西 |
+| **检查更新（vX.Y.Z）** | 问 GitHub 有没有新版；有就弹窗确认，一键覆盖代码 |
 | **完全退出** | 关浏览器 + 退程序 + 托盘图标消失 |
 
 > 「隐藏」和「关窗口」的区别：隐藏时浏览器进程一直在，恢复是瞬间的；
@@ -306,7 +313,62 @@ bili_subtitle(bvid)                      → 台词
 
 ---
 
-## 十、下一步（还没做）
+## 十、更新
+
+程序启动时会在后台问一次 GitHub 有没有新版本（不耽误启动）。
+有的话托盘弹个通知，右键图标 →「检查更新」就能看到。
+
+点下去会：
+
+1. 下载最新 release 的源码包
+2. 只覆盖代码文件（`main.py`、`core/`、`scripts/` 等）
+3. `config.yaml`、`data/`、`logs/` 一律不动
+4. 提示你重启程序生效
+
+也可以自己去 releases 页面下载：
+<https://github.com/ya-shua/lumisphere/releases>
+
+**为什么只覆盖代码**：`data/profile` 里是你的登录态，丢了就得重新扫码；
+`config.yaml` 里是你的网关地址和 QQ 号。更新不该碰这些。
+
+---
+
+## 十一、隐私门禁
+
+仓库里有两道门，防止把不该出门的东西推上去。
+
+**第一道：本地 pre-commit**
+
+```bash
+git config core.hooksPath .githooks   # 每个克隆只做一次
+```
+
+之后每次 `git commit` 都会先扫一遍暂存区，命中就拒绝提交。
+
+**第二道：GitHub Actions**
+
+`.github/workflows/privacy.yml`，推上去之后自动跑
+`python scripts/check_privacy.py --all`。本地 hook 被 `--no-verify` 跳过也躲不过。
+
+**它查什么**
+
+| 类型 | 例子 |
+|---|---|
+| 路径 | `config.yaml`、`data/`、`logs/`、`.venv/`、`*.db`、`*.log` |
+| 密钥 | `access_token:`、`password:`、`ghp_...`、`sk-...`、私钥 |
+| 身份 | 手机号、配置里的 QQ 号 |
+| 网络 | 内网 IP（10.x / 172.16–31.x / 192.168.x） |
+| 已知值 | 这个项目历史上真实用过的 token 和 QQ 号 |
+
+**误报了怎么办**
+
+把那个值换成占位符（比如 `access_token: ""`），
+或者在 `scripts/check_privacy.py` 的 `ALLOW_PATTERNS` 里加白名单。
+**别用 `git add -f` 或 `--no-verify` 绕过去** —— CI 那边还会红。
+
+---
+
+## 十二、下一步（还没做）
 
 - 模式 A：虚拟机隔离（WSL2），接口不变，换执行后端
 - 域名白名单生效
