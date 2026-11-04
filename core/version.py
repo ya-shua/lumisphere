@@ -2,5 +2,5 @@
 
 __version__ = "0.1.0"
 
-# 仓库地址（建好 GitHub 仓库后填 owner/repo，更新检查靠它）
-REPO = "huangliangyou/lumisphere"
+# 仓库地址（更新检查靠它）
+REPO = "ya-shua/lumisphere"
