@@ -8,11 +8,36 @@ from __future__ import annotations
 import logging
 import os
 import time
+from pathlib import Path
 
 import pystray
 from PIL import Image, ImageDraw
 
+from .update import apply_update, check
+from .version import __version__
+
 log = logging.getLogger(__name__)
+
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+
+# MessageBoxW 的常用标志
+MB_OK = 0x00
+MB_ICONWARNING = 0x30
+MB_ICONINFO = 0x40
+MB_YESNO = 0x04
+MB_ICONQUESTION = 0x20
+IDYES = 6
+
+
+def _msgbox(text: str, title: str = "微光域", flags: int = MB_ICONINFO) -> int:
+    """弹一个 Windows 原生对话框（只在托盘线程里用）。"""
+    try:
+        from ctypes import windll
+
+        return windll.user32.MessageBoxW(None, text, title, flags)
+    except Exception:  # 非 Windows 或不支持，退化成日志
+        log.info("%s：%s", title, text)
+        return 0
 
 
 def make_icon(running: bool = True) -> Image.Image:
@@ -119,6 +144,46 @@ def build_tray(
             _log("没发出去：" + str(r.get("reason") or "未知原因"))
 
     @_guard
+    def on_check_update(icon, item):
+        """问 GitHub 有没有新版本；有就一键覆盖代码。"""
+        _log("正在检查更新……")
+        info = check()
+        if not info.get("ok"):
+            _msgbox(
+                "检查更新失败：\n\n" + str(info.get("reason")),
+                flags=MB_ICONWARNING,
+            )
+            return
+
+        if not info.get("has_new"):
+            _msgbox(f"已经是最新版（{info['current']}）")
+            return
+
+        notes = info.get("notes") or "（这次没有写更新说明）"
+        ans = _msgbox(
+            f"发现新版本 {info['latest']}（当前 {info['current']}）\n\n"
+            f"{notes}\n\n"
+            "要现在更新吗？\n"
+            "只会覆盖代码，config.yaml 和 data/ 不会动。",
+            flags=MB_YESNO | MB_ICONQUESTION,
+        )
+        if ans != IDYES:
+            _log("用户取消了更新")
+            return
+
+        _log("正在下载更新……")
+        result = apply_update(PROJECT_DIR, info.get("zip_url") or "")
+        if result.get("ok"):
+            _log(f"更新完成，覆盖了 {result.get('copied')} 个文件")
+            _msgbox(
+                f"更新完成，覆盖了 {result.get('copied')} 个文件。\n\n"
+                "把微光域完全退出再打开，新版本就生效了。",
+            )
+        else:
+            _log("更新失败：" + str(result.get("reason")))
+            _msgbox("更新失败：\n\n" + str(result.get("reason")), flags=MB_ICONWARNING)
+
+    @_guard
     def on_open_data(icon, item):
         path = manager.profile_dir
         if path.exists():
@@ -144,7 +209,9 @@ def build_tray(
         pystray.MenuItem("截图发到 QQ", on_send_shot),
         pystray.MenuItem("打开数据目录", on_open_data),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem(f"检查更新（v{__version__}）", on_check_update),
+        pystray.Menu.SEPARATOR,
         pystray.MenuItem("完全退出", on_quit_clicked),
     )
 
-    return pystray.Icon("lumisphere", make_icon(True), "微光域 · 运行中", menu)
+    return pystray.Icon("lumisphere", make_icon(True), f"微光域 v{__version__} · 运行中", menu)

@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import shutil
 import sys
+import threading
 import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -18,6 +20,8 @@ from core.browser import BrowserManager
 from core.qq import QQNotifier
 from core.server import ControlServer
 from core.tray import build_tray, make_icon
+from core.update import check as check_update
+from core.version import __version__
 from core.window import WindowController
 
 ROOT = Path(__file__).resolve().parent
@@ -29,7 +33,15 @@ ROOT = Path(__file__).resolve().parent
 def load_config() -> dict:
     path = ROOT / "config.yaml"
     if not path.exists():
-        return {}
+        # 刚从 GitHub 克隆下来时只有 config.example.yaml
+        example = ROOT / "config.example.yaml"
+        if example.exists():
+            shutil.copyfile(example, path)
+            logging.getLogger("lumisphere").warning(
+                "没有 config.yaml，已从 config.example.yaml 复制一份（QQ 推送默认关着）"
+            )
+        else:
+            return {}
     with path.open("r", encoding="utf-8") as fh:
         return yaml.safe_load(fh) or {}
 
@@ -73,7 +85,7 @@ def main() -> int:
 
     cfg = load_config()
     log.info("=" * 56)
-    log.info("微光域 LumiSphere 启动")
+    log.info("微光域 LumiSphere v%s 启动", __version__)
 
     manager = BrowserManager(cfg, ROOT)
     log.info("数据目录：%s", manager.profile_dir)
@@ -160,6 +172,27 @@ def main() -> int:
     manager.on_login_needed = _on_login_needed
 
     log.info("托盘已就绪，右键图标可操作")
+
+    def _check_update_quietly() -> None:
+        """开机后台问一句有没有新版，不耽误启动。"""
+        try:
+            info = check_update()
+            if info.get("ok") and info.get("has_new"):
+                log.info("发现新版本 %s（当前 %s）", info["latest"], info["current"])
+                try:
+                    icon.notify(
+                        f"有新版本 {info['latest']}，右键托盘 →「检查更新」",
+                        "微光域",
+                    )
+                except Exception:
+                    log.debug("托盘通知失败", exc_info=True)
+            elif info.get("ok"):
+                log.info("已是最新版（%s）", info.get("current"))
+        except Exception:
+            log.debug("启动时检查更新失败", exc_info=True)
+
+    threading.Thread(target=_check_update_quietly, daemon=True).start()
+
     try:
         icon.run()
     except KeyboardInterrupt:
