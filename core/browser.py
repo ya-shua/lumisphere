@@ -1017,21 +1017,62 @@ class BrowserManager:
 # 辅助：列出当前所有 chrome.exe 进程号
 # ----------------------------------------------------------------------
 def _list_browser_pids(image_name: str = "chrome.exe") -> set[int]:
-    try:
-        out = subprocess.run(
-            ["tasklist", "/FI", f"IMAGENAME eq {image_name}", "/FO", "CSV", "/NH"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            creationflags=_CREATE_NO_WINDOW,
-        )
-    except Exception:
-        log.debug("tasklist 失败", exc_info=True)
-        return set()
+    """列出指定进程名的所有 pid。
 
-    pids: set[int] = set()
-    for line in out.stdout.splitlines():
-        parts = [p.strip().strip('"') for p in line.split('","')]
-        if len(parts) >= 2 and parts[1].isdigit():
-            pids.add(int(parts[1]))
-    return pids
+    ⚠️ 这里不能用 tasklist：程序是 pythonw 起的（没有控制台），
+    tasklist 在没有控制台的父进程里会 rc=0 却什么都不返回 ——
+    stdout 直接是 None，一调就把整个启动流程打挂（AttributeError）。
+
+    改用 Toolhelp32 快照：纯 ctypes，不开子进程，也不依赖控制台。
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    TH32CS_SNAPPROCESS = 0x00000002
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_void_p),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_wchar * 260),
+        ]
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        kernel32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+        kernel32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+        snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if snapshot is None or snapshot == 0 or snapshot == INVALID_HANDLE_VALUE:
+            log.debug("进程快照拿不到")
+            return set()
+
+        target = image_name.lower()
+        pids: set[int] = set()
+        try:
+            entry = PROCESSENTRY32W()
+            entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+            if not kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+                return set()
+            while True:
+                if entry.szExeFile.lower() == target:
+                    pids.add(int(entry.th32ProcessID))
+                if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                    break
+        finally:
+            kernel32.CloseHandle(snapshot)
+        return pids
+    except Exception:
+        log.debug("枚举进程失败", exc_info=True)
+        return set()

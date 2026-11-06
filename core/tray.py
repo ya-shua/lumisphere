@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -28,9 +29,21 @@ MB_YESNO = 0x04
 MB_ICONQUESTION = 0x20
 IDYES = 6
 
+MB_TOPMOST = 0x00040000
+MB_SETFOREGROUND = 0x00010000
+
 
 def _msgbox(text: str, title: str = "微光域", flags: int = MB_ICONINFO) -> int:
-    """弹一个 Windows 原生对话框（只在托盘线程里用）。"""
+    """弹一个 Windows 原生对话框。
+
+    ⚠️ 只能在**后台线程**里调，不能在托盘的菜单回调里调 ——
+    MessageBoxW 是模态的，会抢走当前线程的消息循环；
+    而 pystray 的消息循环就在那个线程里，一抢就会「窗口关不掉、菜单点不动」。
+    所有需要弹框的地方一律 threading.Thread(...).start() 出去。
+
+    hwnd 传 0 没有 owner，窗口可能被别的窗口盖住，所以强制置顶 + 抢焦点。
+    """
+    flags |= MB_TOPMOST | MB_SETFOREGROUND
     try:
         from ctypes import windll
 
@@ -38,6 +51,10 @@ def _msgbox(text: str, title: str = "微光域", flags: int = MB_ICONINFO) -> in
     except Exception:  # 非 Windows 或不支持，退化成日志
         log.info("%s：%s", title, text)
         return 0
+
+
+# 同一时间只允许一个更新流程在跑（防止连点弹出好几个框）
+_update_lock = threading.Lock()
 
 
 def make_icon(running: bool = True) -> Image.Image:
@@ -129,11 +146,16 @@ def build_tray(
         icon.title = "微光域 · 运行中"
         _log("浏览器已重启")
 
-    @_guard
-    def on_send_shot(icon, item):
-        """把当前页面截图发到 QQ（需要登录时点这个最快）。"""
+    def _send_shot_worker(icon):
+        """截图 + 发 QQ 可能要等几秒，放后台，别占着托盘线程。"""
         _log("正在截图并发送到 QQ……")
-        r = manager.submit(manager.send_shot())
+        try:
+            r = manager.submit(manager.send_shot())
+        except Exception as exc:  # noqa: BLE001
+            log.exception("截图发送失败")
+            _log(f"截图发送失败：{exc}")
+            return
+
         if r.get("ok"):
             _log("已发送到 QQ（%d KB）" % (r.get("bytes", 0) // 1024))
             try:
@@ -144,44 +166,62 @@ def build_tray(
             _log("没发出去：" + str(r.get("reason") or "未知原因"))
 
     @_guard
+    def on_send_shot(icon, item):
+        """把当前页面截图发到 QQ（需要登录时点这个最快）。"""
+        threading.Thread(target=_send_shot_worker, args=(icon,), daemon=True).start()
+
+    def _check_update_worker(icon):
+        """整个更新流程都在后台线程里跑：查版本、下载、弹框，一个都不占托盘线程。"""
+        if not _update_lock.acquire(blocking=False):
+            _log("上一次更新还没结束，这次点击忽略了")
+            return
+        try:
+            _log("正在检查更新……")
+            info = check()
+            if not info.get("ok"):
+                reason = str(info.get("reason") or "未知原因")
+                _log("检查更新失败：" + reason)
+                _msgbox("检查更新失败：\n\n" + reason, flags=MB_ICONWARNING)
+                return
+
+            if not info.get("has_new"):
+                _log(f"已是最新版（{info['current']}）")
+                _msgbox(f"已经是最新版（{info['current']}）")
+                return
+
+            notes = (info.get("notes") or "（这次没有写更新说明）")[:800]
+            ans = _msgbox(
+                f"发现新版本 {info['latest']}（当前 {info['current']}）\n\n"
+                f"{notes}\n\n"
+                "要现在更新吗？\n"
+                "只会覆盖代码，config.yaml 和 data/ 不会动。",
+                flags=MB_YESNO | MB_ICONQUESTION,
+            )
+            if ans != IDYES:
+                _log("用户取消了更新")
+                return
+
+            _log("正在下载更新……")
+            result = apply_update(PROJECT_DIR, info.get("zip_url") or "")
+            if result.get("ok"):
+                _log(f"更新完成，覆盖了 {result.get('copied')} 个文件")
+                _msgbox(
+                    f"更新完成，覆盖了 {result.get('copied')} 个文件。\n\n"
+                    "把微光域完全退出再打开，新版本就生效了。",
+                )
+            else:
+                _log("更新失败：" + str(result.get("reason")))
+                _msgbox("更新失败：\n\n" + str(result.get("reason")), flags=MB_ICONWARNING)
+        except Exception:  # noqa: BLE001
+            log.exception("检查更新出错")
+            _log("检查更新出错，详情见 logs/lumisphere.log")
+        finally:
+            _update_lock.release()
+
+    @_guard
     def on_check_update(icon, item):
         """问 GitHub 有没有新版本；有就一键覆盖代码。"""
-        _log("正在检查更新……")
-        info = check()
-        if not info.get("ok"):
-            _msgbox(
-                "检查更新失败：\n\n" + str(info.get("reason")),
-                flags=MB_ICONWARNING,
-            )
-            return
-
-        if not info.get("has_new"):
-            _msgbox(f"已经是最新版（{info['current']}）")
-            return
-
-        notes = info.get("notes") or "（这次没有写更新说明）"
-        ans = _msgbox(
-            f"发现新版本 {info['latest']}（当前 {info['current']}）\n\n"
-            f"{notes}\n\n"
-            "要现在更新吗？\n"
-            "只会覆盖代码，config.yaml 和 data/ 不会动。",
-            flags=MB_YESNO | MB_ICONQUESTION,
-        )
-        if ans != IDYES:
-            _log("用户取消了更新")
-            return
-
-        _log("正在下载更新……")
-        result = apply_update(PROJECT_DIR, info.get("zip_url") or "")
-        if result.get("ok"):
-            _log(f"更新完成，覆盖了 {result.get('copied')} 个文件")
-            _msgbox(
-                f"更新完成，覆盖了 {result.get('copied')} 个文件。\n\n"
-                "把微光域完全退出再打开，新版本就生效了。",
-            )
-        else:
-            _log("更新失败：" + str(result.get("reason")))
-            _msgbox("更新失败：\n\n" + str(result.get("reason")), flags=MB_ICONWARNING)
+        threading.Thread(target=_check_update_worker, args=(icon,), daemon=True).start()
 
     @_guard
     def on_open_data(icon, item):
