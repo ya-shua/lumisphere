@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 # Windows 控制台默认是 GBK，不重设一下打中文会炸
 try:
@@ -33,6 +35,7 @@ BANNED_PATHS = [
     (re.compile(r"(^|/)\.env$"), "环境变量文件"),
     (re.compile(r"\.(db|sqlite3?|log)$"), "本地数据库 / 日志"),
     (re.compile(r"(^|/)bili_credential\.json$"), "B站登录凭证"),
+    (re.compile(r"(^|/)\.private_values\.json$"), "本地敏感值表（真实值全在里面）"),
 ]
 
 # ---------------------------------------------------------------- 内容规则
@@ -66,6 +69,16 @@ RULES = [
         "配置里写了 QQ 号",
     ),
     (
+        "独立的 QQ 号",
+        re.compile(r"(?:QQ|qq|扣扣|企鹅)\s*(?:号|是|为)?\s*[:：=]?\s*[1-9]\d{4,11}(?!\d)"),
+        "写了 QQ 号",
+    ),
+    (
+        "带标签的手机号",
+        re.compile(r"(?:手机|电话|tel|phone|mobile)\s*[:：=]?\s*\+?1[3-9]\d{9}", re.I),
+        "写了手机号",
+    ),
+    (
         "内网地址",
         re.compile(r"\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b"),
         "内网 IP",
@@ -73,11 +86,35 @@ RULES = [
 ]
 
 # ---------------------------------------------------------------- 已知真实值
-# 拆开写，免得这个脚本扫到自己。
-KNOWN_VALUES = [
-    ("曾用过的网关 token", "P_IgO" + "Zl2uv3SeJV2cdWGYjWPQ5SXJmJIFokR0RFfz1c"),
-    ("作者 QQ 号", "3102849" + "732"),
-]
+# 真实值不写在这个脚本里 —— 脚本本身也是公开的，写进来等于把秘密一起公开。
+# 它们放在同级目录的 .private_values.json（.gitignore 已排除），运行时加载。
+# 文件不存在就只跑通用规则（CI 和别人的机器上就是这种情况，不需要也不该有它）。
+PRIVATE_FILE = Path(__file__).resolve().parent / ".private_values.json"
+
+
+def load_private() -> tuple[list[tuple[str, str]], list[str]]:
+    """读本地敏感值表，返回 (已知真实值对, 额外敏感词)。"""
+    if not PRIVATE_FILE.exists():
+        return [], []
+    try:
+        data = json.loads(PRIVATE_FILE.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[门禁] {PRIVATE_FILE.name} 读不了（{exc}），只跑通用规则。")
+        return [], []
+
+    known: list[tuple[str, str]] = []
+    for item in data.get("known_values") or []:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            name, value = str(item[0]).strip(), str(item[1]).strip()
+            if name and value:
+                known.append((name, value))
+
+    words = [str(w).strip() for w in (data.get("extra_words") or []) if str(w).strip()]
+    return known, words
+
+
+KNOWN_VALUES: list[tuple[str, str]] = []
+EXTRA_WORDS: list[str] = []
 
 # 允许出现的无害串（示例占位、文档说明）
 ALLOW_PATTERNS = [
@@ -141,6 +178,16 @@ def check_content(path: str) -> list[str]:
                     hits.append(f"{path}:{no}  出现过{name}（真实值，必须删掉）")
                     break
 
+    known_texts = {value for _name, value in KNOWN_VALUES}
+    for word in EXTRA_WORDS:
+        if word in known_texts:  # 上面已经报过，别重复
+            continue
+        if word in text:
+            for no, line in enumerate(lines, 1):
+                if word in line:
+                    hits.append(f"{path}:{no}  出现过敏感词「{word}」（必须删掉）")
+                    break
+
     for no, line in enumerate(lines, 1):
         if any(p.search(line) for p in ALLOW_PATTERNS):
             continue
@@ -152,6 +199,9 @@ def check_content(path: str) -> list[str]:
 
 
 def main() -> int:
+    global KNOWN_VALUES, EXTRA_WORDS
+    KNOWN_VALUES, EXTRA_WORDS = load_private()
+
     staged = "--staged" in sys.argv
     files = git_files(staged)
     if not files:
