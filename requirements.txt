@@ -1,0 +1,9 @@
+# 微光域 LumiSphere —— 运行依赖
+# 安装：.venv\Scripts\pip install -r requirements.txt
+# 装完还要执行一次：.venv\Scripts\playwright install chromium
+
+playwright>=1.40
+pystray>=0.19
+pywin32>=306
+PyYAML>=6.0
+pillow>=10.0

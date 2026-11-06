@@ -1,0 +1,29 @@
+# 本地配置：里面有 QQ 网关 token 和你的 QQ 号，不进仓库。
+# 新克隆下来先复制一份：cp config.example.yaml config.yaml
+config.yaml
+
+# 本地敏感值表：真实 token、QQ 号、昵称、手机号。
+# 隐私门禁靠它做"原话命中"，所以它自己绝不能进仓库。
+scripts/.private_values.json
+
+# 浏览器数据：登录态、cookie、缓存。这是最不能出门的东西。
+data/
+
+# 运行日志、截图、抽出来的帧
+logs/
+
+# Python 环境
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 本地数据库
+*.db
+*.sqlite3
+*.sqlite
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini

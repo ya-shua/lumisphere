@@ -1,0 +1,20 @@
+name: privacy
+
+# 第二道门禁：就算本地 hook 被 --no-verify 绕开，推上来也会红。
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 隐私门禁
+        run: python scripts/check_privacy.py --all
