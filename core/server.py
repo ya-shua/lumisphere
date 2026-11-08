@@ -138,6 +138,11 @@ class _Handler(BaseHTTPRequestHandler):
                 return False
             return True
 
+        # 本机模式不校验令牌：配了也不生效。
+        # 这样从 bridge 切回 local 时，残留的 token 不会把调用方挡在外面。
+        if getattr(srv, "mode", "local") == "local":
+            return True
+
         expected = getattr(srv, "api_token", "") or ""
         if expected:
             got = self.headers.get("X-Auth-Token") or ""
@@ -460,6 +465,7 @@ class ControlServer:
         self._httpd.bind_host = self.host
         self._httpd.rate_limiter = self.rate_limiter
         self._httpd.config_path = self.config_path
+        self._httpd.mode = self.mode
 
         self._thread = threading.Thread(target=self._httpd.serve_forever, name="lumisphere-http", daemon=True)
         self._thread.start()
@@ -467,7 +473,9 @@ class ControlServer:
             "控制端口已开启：%s（%s%s）",
             self.url,
             "仅本机" if self.bind_loopback else "对外开放",
-            "，带 token 校验" if self.api_token else "",
+            "，带 token 校验"
+            if (self.mode != "local" and self.api_token)
+            else "",
         )
         return True
 
