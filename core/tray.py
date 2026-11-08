@@ -202,7 +202,9 @@ def build_tray(
                 return
 
             _log("正在下载更新……")
-            result = apply_update(PROJECT_DIR, info.get("zip_url") or "")
+            result = apply_update(
+                PROJECT_DIR, info.get("zip_url") or "", tag=info.get("tag") or ""
+            )
             if result.get("ok"):
                 _log(f"更新完成，覆盖了 {result.get('copied')} 个文件")
                 _msgbox(
