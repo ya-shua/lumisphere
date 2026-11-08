@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import tempfile
@@ -17,6 +18,35 @@ from .version import REPO, __version__
 
 API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
 UA = {"User-Agent": "LumiSphere-Updater"}
+
+
+def _git_blob_sha(data: bytes) -> str:
+    """算 git blob 的 sha：sha1("blob <长度>\\0" + 内容)。
+
+    GitHub 的 tree 接口给的就是这个值，拿它比对就知道下下来的文件
+    是不是同一个东西 —— 中间被人换了内容就对不上。
+    """
+    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+
+
+def _fetch_tree_shas(tag: str, timeout: float) -> dict[str, str]:
+    """取某个 tag 对应提交的 {路径: git blob sha}。"""
+    with urllib.request.urlopen(
+        urllib.request.Request(f"https://api.github.com/repos/{REPO}/commits/{tag}", headers=UA),
+        timeout=timeout,
+    ) as resp:
+        commit = json.loads(resp.read().decode("utf-8"))
+    tree_sha = commit["commit"]["tree"]["sha"]
+
+    with urllib.request.urlopen(
+        urllib.request.Request(
+            f"https://api.github.com/repos/{REPO}/git/trees/{tree_sha}?recursive=1", headers=UA
+        ),
+        timeout=timeout,
+    ) as resp:
+        tree = json.loads(resp.read().decode("utf-8"))
+
+    return {t["path"]: t["sha"] for t in tree.get("tree", []) if t.get("type") == "blob"}
 
 # 更新时只认这几个（其余一律不碰）
 UPDATE_FILES = ("main.py", "mcp_server.py", "requirements.txt", "README.md", "LICENSE")
@@ -56,6 +86,7 @@ def check(timeout: float = 8.0) -> dict:
         "url": data.get("html_url") or f"https://github.com/{REPO}/releases",
         "notes": (data.get("body") or "").strip()[:1200],
         "zip_url": data.get("zipball_url") or "",
+        "tag": data.get("tag_name") or "",
     }
 
 
@@ -71,10 +102,12 @@ def _safe_extract(zip_path: Path, target: Path) -> None:
         zf.extractall(target)
 
 
-def apply_update(project_dir: Path, zip_url: str = "", timeout: float = 60.0) -> dict:
+def apply_update(
+    project_dir: Path, zip_url: str = "", timeout: float = 60.0, tag: str = ""
+) -> dict:
     """下载最新版并覆盖代码文件。返回 {ok, copied, note}。
 
-    调用方负责在成功后重启程序。
+    调用方负责在成功后重启程序。传了 tag 就会做完整性校验。
     """
     project_dir = Path(project_dir).resolve()
 
@@ -85,6 +118,7 @@ def apply_update(project_dir: Path, zip_url: str = "", timeout: float = 60.0) ->
         if not info.get("has_new"):
             return {"ok": False, "reason": f"已经是最新版（{__version__}）"}
         zip_url = info["zip_url"]
+        tag = tag or (info.get("tag") or "")
 
     work = Path(tempfile.mkdtemp(prefix="lumisphere-update-"))
     try:
@@ -100,6 +134,31 @@ def apply_update(project_dir: Path, zip_url: str = "", timeout: float = 60.0) ->
         if len(tops) != 1:
             return {"ok": False, "reason": "压缩包结构不认识（应该只有一个顶层目录）"}
         src = tops[0]
+
+        # 完整性校验：逐个文件比对 GitHub 记录的指纹。
+        # 中间被人篡改过（或者下到半截），这里就对不上，立刻中止不覆盖。
+        if tag:
+            try:
+                expected = _fetch_tree_shas(tag, timeout)
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "reason": f"取不到校验信息，不敢覆盖：{exc}"}
+
+            bad: list[str] = []
+            for rel, want in expected.items():
+                f = src / rel
+                if not f.is_file():
+                    continue
+                try:
+                    if _git_blob_sha(f.read_bytes()) != want:
+                        bad.append(rel)
+                except OSError:
+                    continue
+            if bad:
+                shown = "、".join(bad[:5]) + ("…" if len(bad) > 5 else "")
+                return {
+                    "ok": False,
+                    "reason": f"下载的包和 GitHub 记录对不上（{len(bad)} 个文件），已中止：{shown}",
+                }
 
         copied = 0
         for name in UPDATE_FILES:

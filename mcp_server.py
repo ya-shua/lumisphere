@@ -7,12 +7,17 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 
 from mcp.server.fastmcp import FastMCP, Image
 
-BASE = "http://127.0.0.1:8765"
+# 连哪个微光域、要不要带 token，都由环境变量决定：
+#   LUMISPHERE_BASE   默认 http://127.0.0.1:8765
+#   LUMISPHERE_TOKEN  微光域开了鉴权就必须填，否则一律 401
+BASE = (os.environ.get("LUMISPHERE_BASE") or "http://127.0.0.1:8765").rstrip("/")
+TOKEN = (os.environ.get("LUMISPHERE_TOKEN") or "").strip()
 DEFAULT_TIMEOUT = 60
 
 mcp = FastMCP("lumisphere")
@@ -23,6 +28,8 @@ def _req(path: str, payload: dict | None = None, timeout: int = DEFAULT_TIMEOUT)
     url = BASE + path
     data = None
     headers = {"Accept": "application/json"}
+    if TOKEN:
+        headers["X-Auth-Token"] = TOKEN
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json; charset=utf-8"
@@ -42,7 +49,7 @@ def _req(path: str, payload: dict | None = None, timeout: int = DEFAULT_TIMEOUT)
         raise RuntimeError(f"微光域返回 HTTP {exc.code}：{detail}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(
-            "连不上微光域（127.0.0.1:8765）。"
+            f"连不上微光域（{BASE}）。"
             "它大概没在跑——双击「启动.bat」，或看 logs/lumisphere.log。" + f"（{exc}）"
         ) from exc
 
