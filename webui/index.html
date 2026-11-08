@@ -142,6 +142,7 @@ async function load() {
       ? '<span class="ok">运行中</span>'
       : '<span class="bad">未连接</span>';
     if (d.api_token_set) $("token").placeholder = "已设置（留空则不修改）";
+    $("token").value = d.api_token || "";
     paint();
   } catch (e) {
     $("msg").className = "msg err";
