@@ -58,21 +58,23 @@ _update_lock = threading.Lock()
 
 
 def make_icon(running: bool = True) -> Image.Image:
-    """画托盘图标。
+    """画托盘图标：一间小房子。
 
-    Windows 的托盘会自动把图标缩到 16x16，所以：
+    微光域是「给 AI 划出来的一块地方」，用房子比圆点更说得清。
+    Windows 托盘会把它缩到 16x16，所以：
       · 不透明深色底（半透明边缘缩放后会糊成脏块）
-      · 一颗高饱和的实心圆 + 白色中心点，缩到 16px 也认得出
+      · 只用大块面，不画细线 —— 细线缩到 16px 直接消失
     """
     size = 64
-    bg = (18, 22, 32, 255)                     # 不透明深底
-    ring = (96, 168, 255, 255) if running else (150, 150, 150, 255)
-    core = (255, 255, 255, 255)
+    bg = (18, 22, 32, 255)                       # 不透明深底
+    ink = (255, 199, 102, 255) if running else (138, 143, 153, 255)
 
     img = Image.new("RGBA", (size, size), bg)
     d = ImageDraw.Draw(img)
-    d.ellipse((6, 6, size - 7, size - 7), fill=ring)          # 实心圆
-    d.ellipse((22, 22, size - 23, size - 23), fill=core)      # 白色圆心
+
+    d.polygon([(7, 33), (32, 9), (57, 33)], fill=ink)      # 屋顶
+    d.rectangle((15, 31, 49, 55), fill=ink)                # 房身
+    d.rectangle((27, 39, 37, 55), fill=bg)                 # 门（镂空成底色）
     return img
 
 

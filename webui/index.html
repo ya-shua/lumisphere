@@ -119,9 +119,19 @@ function paint() {
   document.querySelectorAll(".mode").forEach((el) => {
     el.classList.toggle("on", el.dataset.mode === state.mode);
   });
-  $("tokenHint").textContent = state.mode === "local"
-    ? "本机模式可以留空。另两种模式必须填，不然程序会拒绝开端口。"
-    : "这个模式必须填 token，否则程序不会开端口。点「生成」自动来一个。";
+  const isLocal = state.mode === "local";
+  const hasTok = !!$("token").value.trim();
+  // 本机模式不校验令牌，填了反而让所有调用方都要带头 ——
+  // 直接把输入框锁上，省得有人以为「必须设一个」。
+  $("token").disabled = isLocal;
+  $("gen").disabled = isLocal;
+  if (isLocal) {
+    $("tokenHint").textContent = hasTok
+      ? "本机模式不校验令牌，这个值是留着以后切到别的模式用的，现在不生效。"
+      : "本机模式不需要令牌。端口只绑 127.0.0.1，外面根本碰不到。";
+  } else {
+    $("tokenHint").textContent = "这个模式必须填令牌，否则程序不会开端口。点「生成」自动来一个。";
+  }
 }
 
 function fmt(bytes) { return bytes ? (bytes / 1024).toFixed(0) + " KB" : "—"; }
