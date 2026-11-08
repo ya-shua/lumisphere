@@ -174,6 +174,9 @@ class _Handler(BaseHTTPRequestHandler):
                     "version": __version__,
                     "mode": str(rt.get("mode") or "local"),
                     "api_token_set": bool(str(rt.get("api_token") or "").strip()),
+                    # 设置页只给本机看，所以这里直接给明文 ——
+                    # 能读到它的人本来就能直接打开 config.yaml
+                    "api_token": str(rt.get("api_token") or ""),
                     "host": getattr(self.server, "bind_host", ""),
                     "port": self.server.server_address[1],
                     "browser_ok": bool(getattr(self.manager, "is_connected", False)),

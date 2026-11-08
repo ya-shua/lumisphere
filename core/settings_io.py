@@ -72,7 +72,11 @@ def write_runtime(path: Path, mode: str, api_token: str | None = None) -> None:
     start = next((i for i, line in enumerate(lines) if _HEAD.match(line)), None)
 
     if start is None:
-        new_block = ["runtime:", f'  mode: "{mode}"']
+        new_block = [
+            "runtime:",
+            "  # local 只在本机用 | bridge 机器人云端·浏览器本地 | cloud 全部在云端",
+            f'  mode: "{mode}"',
+        ]
         if api_token is not None:
             new_block.append(f'  api_token: "{api_token}"')
         new_block.append("")
