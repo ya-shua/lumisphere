@@ -50,7 +50,7 @@ def _fetch_tree_shas(tag: str, timeout: float) -> dict[str, str]:
 
 # 更新时只认这几个（其余一律不碰）
 UPDATE_FILES = ("main.py", "mcp_server.py", "requirements.txt", "README.md", "LICENSE")
-UPDATE_DIRS = ("core", "scripts", "docs", ".githooks", ".github")
+UPDATE_DIRS = ("core", "scripts", "docs", "webui", ".githooks", ".github")
 
 # 就算 zip 里有，也绝对不覆盖
 PROTECTED = {"config.yaml", "config.example.yaml", "data", "logs", ".venv", ".git"}

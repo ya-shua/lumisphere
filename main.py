@@ -134,7 +134,7 @@ def main() -> int:
         else:
             log.info("窗口暂未出现，稍后可点托盘「隐藏浏览器」")
 
-    server = ControlServer(cfg, manager, window_ctrl)
+    server = ControlServer(cfg, manager, window_ctrl, config_path=ROOT / "config.yaml")
     server.start()
 
     icon = build_tray(

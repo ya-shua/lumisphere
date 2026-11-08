@@ -14,7 +14,14 @@ import threading
 import time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
+
+from .settings_io import MODES, read_runtime, write_runtime
+from .version import __version__
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+SETTINGS_PAGE = ROOT_DIR / "webui" / "index.html"
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +50,14 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(png)))
         self.end_headers()
         self.wfile.write(png)
+
+    def _send_html(self, body: bytes) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
@@ -73,7 +88,12 @@ class _Handler(BaseHTTPRequestHandler):
             return h[: end + 1] if end != -1 else h
         return h.rsplit(":", 1)[0] if ":" in h else h
 
-    def _guard(self) -> bool:
+    def _is_local_client(self) -> bool:
+        """请求是不是从本机发出来的。"""
+        ip = (self.client_address[0] or "").strip()
+        return ip in ("127.0.0.1", "::1") or ip.startswith("127.")
+
+    def _guard(self, path: str = "") -> bool:
         """限流 → Host/Origin → token，任何一关不过就直接回错误。"""
         srv = self.server
         client = self.client_address[0]
@@ -110,6 +130,14 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "forbidden origin"}, 403)
                 return False
 
+        # 设置页只开放给本机，而且不要求 token ——
+        # 能坐在这台机器前的人本来就能直接改 config.yaml，加一道 token 只是让他打不开页面。
+        if path == "/" or path.startswith("/api/"):
+            if not self._is_local_client():
+                self._send_json({"error": "设置页只允许本机访问"}, 403)
+                return False
+            return True
+
         expected = getattr(srv, "api_token", "") or ""
         if expected:
             got = self.headers.get("X-Auth-Token") or ""
@@ -124,9 +152,34 @@ class _Handler(BaseHTTPRequestHandler):
     # ---- 路由 ----
     def do_GET(self):  # noqa: N802
         try:
-            if not self._guard():
-                return
             path = self.path.split("?", 1)[0].rstrip("/") or "/"
+            if not self._guard(path):
+                return
+
+            # ---- 设置页 ----
+            if path == "/":
+                try:
+                    html = SETTINGS_PAGE.read_bytes()
+                except OSError:
+                    self._send_json({"error": "设置页文件缺失（webui/index.html）"}, 500)
+                    return
+                self._send_html(html)
+                return
+
+            if path == "/api/config":
+                cfg_path = getattr(self.server, "config_path", None)
+                rt = read_runtime(cfg_path) if cfg_path else {}
+                self._send_json({
+                    "ok": True,
+                    "version": __version__,
+                    "mode": str(rt.get("mode") or "local"),
+                    "api_token_set": bool(str(rt.get("api_token") or "").strip()),
+                    "host": getattr(self.server, "bind_host", ""),
+                    "port": self.server.server_address[1],
+                    "browser_ok": bool(getattr(self.manager, "is_connected", False)),
+                })
+                return
+
             if path == "/status":
                 self._send_json(self._run(self.manager.status()))
                 return
@@ -164,10 +217,41 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         try:
-            if not self._guard():
-                return
             path = self.path.split("?", 1)[0].rstrip("/") or "/"
+            if not self._guard(path):
+                return
             body = self._read_json()
+
+            # ---- 设置页的两个接口 ----
+            if path == "/api/token":
+                import secrets
+
+                self._send_json({"ok": True, "token": secrets.token_urlsafe(32)})
+                return
+
+            if path == "/api/config":
+                cfg_path = getattr(self.server, "config_path", None)
+                if cfg_path is None:
+                    self._send_json({"error": "服务没拿到配置文件路径"}, 500)
+                    return
+
+                mode = str(body.get("mode") or "").strip().lower()
+                if mode not in MODES:
+                    self._send_json({"error": f"不认识的模式：{mode or '（空）'}"}, 400)
+                    return
+
+                token_raw = body.get("api_token")
+                token = None if token_raw is None else str(token_raw).strip()
+
+                try:
+                    write_runtime(cfg_path, mode, token)
+                except Exception as exc:  # noqa: BLE001
+                    self._send_json({"error": f"写配置失败：{exc}"}, 500)
+                    return
+
+                log.info("运行模式已改为 %s（重启后生效）", mode)
+                self._send_json({"ok": True, "restart": True, "mode": mode})
+                return
 
             if path == "/open":
                 url = str(body.get("url") or "").strip()
@@ -308,9 +392,12 @@ def _is_loopback(host: str) -> bool:
 
 
 class ControlServer:
-    def __init__(self, cfg: dict, manager, window_ctrl=None) -> None:
+    def __init__(
+        self, cfg: dict, manager, window_ctrl=None, config_path: Path | None = None
+    ) -> None:
         s = cfg.get("server") or {}
         r = cfg.get("runtime") or {}
+        self.config_path = config_path
 
         # 运行模式：local 只在本机；其它模式监听对外地址，必须带 token
         self.mode = str(r.get("mode") or "local").strip().lower()
@@ -369,6 +456,7 @@ class ControlServer:
         self._httpd.bind_loopback = self.bind_loopback
         self._httpd.bind_host = self.host
         self._httpd.rate_limiter = self.rate_limiter
+        self._httpd.config_path = self.config_path
 
         self._thread = threading.Thread(target=self._httpd.serve_forever, name="lumisphere-http", daemon=True)
         self._thread.start()
