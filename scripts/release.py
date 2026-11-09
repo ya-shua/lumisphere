@@ -23,7 +23,7 @@ from pathlib import Path
 
 OWNER = "ya-shua"
 REPO = "lumisphere"
-TOKEN_FILE = Path(r"C:\Users\Lenovo\Desktop\token.txt")
+TOKEN_FILE = Path(r"%USERPROFILE%\Desktop\token.txt")
 VERSION_FILE = Path(__file__).resolve().parent.parent / "core" / "version.py"
 
 API_ROOT = f"https://api.github.com/repos/{OWNER}/{REPO}"

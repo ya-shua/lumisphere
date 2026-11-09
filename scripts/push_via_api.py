@@ -27,7 +27,7 @@ from pathlib import Path
 
 OWNER = "ya-shua"
 REPO = "lumisphere"
-TOKEN_FILE = Path(r"C:\Users\Lenovo\Desktop\token.txt")
+TOKEN_FILE = Path(r"%USERPROFILE%\Desktop\token.txt")
 GIT = r"D:\Git\cmd\git.exe"
 
 API_ROOT = f"https://api.github.com/repos/{OWNER}/{REPO}"
