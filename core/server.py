@@ -10,6 +10,7 @@ import hmac
 import ipaddress
 import json
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -26,6 +27,7 @@ SETTINGS_PAGE = ROOT_DIR / "webui" / "index.html"
 log = logging.getLogger(__name__)
 
 MAX_BODY = 64 * 1024
+STARTED_AT = time.time()
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -169,6 +171,41 @@ class _Handler(BaseHTTPRequestHandler):
                     self._send_json({"error": "设置页文件缺失（webui/index.html）"}, 500)
                     return
                 self._send_html(html)
+                return
+
+            if path == "/api/health":
+                # 契约（docs/插件对接契约.md）：只报「进程活着」，不检查浏览器连着没
+                self._send_json({
+                    "ok": True,
+                    "id": "lumisphere",
+                    "version": __version__,
+                    "uptime_s": round(time.time() - STARTED_AT, 1),
+                })
+                return
+
+            if path == "/api/manifest":
+                try:
+                    meta = json.loads((ROOT_DIR / "metadata.json").read_text(encoding="utf-8-sig"))
+                except Exception:
+                    meta = {}
+                self._send_json({
+                    "ok": True,
+                    "metadata": meta,
+                    "runtime": {
+                        "port": self.server.server_address[1],
+                        "pid": os.getpid(),
+                        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                        "browser_ok": bool(getattr(self.manager, "is_connected", False)),
+                    },
+                    "capabilities": [
+                        {"name": "打开网页", "kind": "http", "how": "POST /open {\"url\": ...}"},
+                        {"name": "搜索", "kind": "http", "how": "POST /search {\"q\": ...}"},
+                        {"name": "抓正文", "kind": "http", "how": "POST /fetch {\"url\": ...}"},
+                        {"name": "截图", "kind": "http", "how": "GET /screenshot（PNG）"},
+                        {"name": "标签页管理", "kind": "http", "how": "GET /tabs、POST /tabs/clean"},
+                        {"name": "视频抽帧", "kind": "http", "how": "POST /video/frames"},
+                    ],
+                })
                 return
 
             if path == "/api/config":

@@ -2,11 +2,12 @@
   "id": "lumisphere",
   "name": "微光域",
   "name_en": "LumiSphere",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "author": "ya-shua",
   "description": "给她一片可以自由浏览、又不会打扰主机的专属空间：浏览器自动化，MCP 12 个工具。",
   "builtin": false,
   "kind": "app",
+  "port": 8765,
   "launch": {
     "runtime": "python",
     "entry": "main.py",
@@ -14,8 +15,42 @@
     "port": 8765,
     "url": "http://127.0.0.1:8765/"
   },
+  "capabilities": [
+    "打开网页、切标签页",
+    "搜索并抓正文",
+    "截图（PNG / base64）",
+    "视频抽帧与探测",
+    "登录状态检测与等待"
+  ],
+  "standalone": {
+    "works_alone": true,
+    "needs": [
+      "本机装了 Edge（Playwright 用系统 Edge）"
+    ],
+    "how": "python main.py（自带 venv），浏览器窗口会被藏起来，浏览器打开 8765 就是控制台"
+  },
+  "contract": "docs/对接.md",
   "source": {
     "repo": ""
   },
-  "page": "http://127.0.0.1:8765/"
+  "page": "http://127.0.0.1:8765/",
+  "mcp": {
+    "entry": "mcp_server.py",
+    "runtime": "python",
+    "args": [],
+    "tools": [
+      "lumisphere_login_check",
+      "lumisphere_login_notify",
+      "lumisphere_login_wait",
+      "lumisphere_open",
+      "lumisphere_search",
+      "lumisphere_send_qq",
+      "lumisphere_shot",
+      "lumisphere_status",
+      "lumisphere_tabs",
+      "lumisphere_text",
+      "lumisphere_video_frames",
+      "lumisphere_video_probe"
+    ]
+  }
 }

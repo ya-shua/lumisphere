@@ -81,6 +81,36 @@ def alert(title: str, message: str) -> None:
         pass
 
 
+def _settle_window(cfg: dict, manager, window_ctrl) -> None:
+    """把浏览器窗口定位到、然后藏起来（后台做，不挡启动）。
+
+    窗口可能比进程晚一步出现，所以先等它；藏不住就先记日志，
+    托盘上的「隐藏浏览器」还能再藏一次。
+    """
+    log = logging.getLogger("lumisphere")
+    try:
+        for _ in range(20):
+            if window_ctrl.refresh(manager.pids):
+                break
+            time.sleep(0.25)
+        log.info("已定位窗口：%s", window_ctrl.cached or "（暂未出现）")
+
+        if not (cfg.get("browser") or {}).get("start_hidden", True):
+            return
+        hidden = 0
+        for _ in range(12):
+            hidden = window_ctrl.hide(manager.pids)
+            if hidden:
+                break
+            time.sleep(0.3)
+        if hidden:
+            log.info("已隐藏浏览器窗口（%d 个）—— 点托盘「显示浏览器」可以叫出来", hidden)
+        else:
+            log.info("窗口暂未出现，稍后可点托盘「隐藏浏览器」")
+    except Exception:
+        log.exception("定位/隐藏窗口时出错（不影响使用）")
+
+
 # ----------------------------------------------------------------------
 # 主流程
 # ----------------------------------------------------------------------
@@ -117,30 +147,20 @@ def main() -> int:
         return 1
 
     window_ctrl = WindowController()
-    # 窗口可能比进程晚一步出现，给最多 5 秒
-    for _ in range(20):
-        if window_ctrl.refresh(manager.pids):
-            break
-        time.sleep(0.25)
-    log.info("已定位窗口：%s", window_ctrl.cached or "（暂未出现）")
 
-    # 默认启动就藏起来：AI 在后台用，不挡屏幕。点托盘「显示浏览器」再叫出来。
-    if (cfg.get("browser") or {}).get("start_hidden", True):
-        hidden = 0
-        for _ in range(12):
-            hidden = window_ctrl.hide(manager.pids)
-            if hidden:
-                break
-            time.sleep(0.3)
-        if hidden:
-            log.info(
-                "已隐藏浏览器窗口（%d 个）—— 点托盘「显示浏览器」可以叫出来", hidden
-            )
-        else:
-            log.info("窗口暂未出现，稍后可点托盘「隐藏浏览器」")
-
+    # 先把 8765 开起来，再去找窗口 / 藏窗口：
+    # 以前是「起浏览器 → 等窗口最多 5 秒 → 藏窗口最多 3.6 秒 → 才开端口」，
+    # 于是从点图标到能打开页面要 8~9 秒，海螺那边一键启动就卡在这一段。
     server = ControlServer(cfg, manager, window_ctrl, config_path=ROOT / "config.yaml")
     server.start()
+
+    # 定位 + 隐藏放后台：页面已经能用了，窗口慢慢收拾
+    threading.Thread(
+        target=_settle_window,
+        args=(cfg, manager, window_ctrl),
+        name="window-settle",
+        daemon=True,
+    ).start()
 
     icon = build_tray(
         manager,
