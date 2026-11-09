@@ -11,7 +11,7 @@
   python scripts/push_via_api.py --dry-run       # 只算不推
   python scripts/push_via_api.py --branch dev    # 推到别的分支
 
-token 从 C:\\Users\\Lenovo\\Desktop\\token.txt 读，不打印、不落盘。
+token 从 ~/Desktop/token.txt 读，不打印、不落盘。
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -27,8 +28,8 @@ from pathlib import Path
 
 OWNER = "ya-shua"
 REPO = "lumisphere"
-TOKEN_FILE = Path(r"%USERPROFILE%\Desktop\token.txt")
-GIT = r"D:\Git\cmd\git.exe"
+TOKEN_FILE = Path(os.path.expanduser("~/Desktop/token.txt"))
+GIT = os.environ.get("GIT_EXE") or "git"  # 默认走 PATH，个别机器可设 GIT_EXE
 
 API_ROOT = f"https://api.github.com/repos/{OWNER}/{REPO}"
 HEADERS_BASE = {

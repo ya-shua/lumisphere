@@ -8,13 +8,14 @@
   python scripts/release.py --dry-run
 
 前提：代码已经推到 main（tag 指向远端最新 commit 时最稳）。
-token 从 C:\\Users\\Lenovo\\Desktop\\token.txt 读。
+token 从 ~/Desktop/token.txt 读。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.error
@@ -23,7 +24,7 @@ from pathlib import Path
 
 OWNER = "ya-shua"
 REPO = "lumisphere"
-TOKEN_FILE = Path(r"%USERPROFILE%\Desktop\token.txt")
+TOKEN_FILE = Path(os.path.expanduser("~/Desktop/token.txt"))
 VERSION_FILE = Path(__file__).resolve().parent.parent / "core" / "version.py"
 
 API_ROOT = f"https://api.github.com/repos/{OWNER}/{REPO}"
