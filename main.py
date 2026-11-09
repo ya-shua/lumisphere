@@ -48,15 +48,20 @@ def load_config() -> dict:
 
 def setup_logging() -> None:
     log_dir = ROOT / "logs"
-    log_dir.mkdir(exist_ok=True)
-    handlers: list[logging.Handler] = [
-        RotatingFileHandler(
-            log_dir / "lumisphere.log",
-            maxBytes=2 * 1024 * 1024,
-            backupCount=3,
-            encoding="utf-8",
-        )
-    ]
+    try:
+        log_dir.mkdir(exist_ok=True)
+        handlers: list[logging.Handler] = [
+            RotatingFileHandler(
+                log_dir / "lumisphere.log",
+                maxBytes=2 * 1024 * 1024,
+                backupCount=3,
+                encoding="utf-8",
+            )
+        ]
+    except OSError:
+        # 日志文件被上一个实例占着（重复启动最常见）时，别为了写日志把整个程序带走：
+        # 退回控制台，海螺那边还有一份 stdout 日志能看。
+        handlers = [logging.StreamHandler()] if sys.stderr else [logging.NullHandler()]
     if sys.stdout and sys.stdout.isatty():
         handlers.append(logging.StreamHandler())
 
