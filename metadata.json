@@ -1,0 +1,21 @@
+{
+  "id": "lumisphere",
+  "name": "微光域",
+  "name_en": "LumiSphere",
+  "version": "1.0.6",
+  "author": "ya-shua",
+  "description": "给她一片可以自由浏览、又不会打扰主机的专属空间：浏览器自动化，MCP 12 个工具。",
+  "builtin": false,
+  "kind": "app",
+  "launch": {
+    "runtime": "python",
+    "entry": "main.py",
+    "note": "浏览器自动化，MCP 12 个工具。",
+    "port": 8765,
+    "url": "http://127.0.0.1:8765/"
+  },
+  "source": {
+    "repo": ""
+  },
+  "page": "http://127.0.0.1:8765/"
+}
