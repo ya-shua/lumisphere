@@ -2,7 +2,7 @@
   "id": "lumisphere",
   "name": "微光域",
   "name_en": "LumiSphere",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "author": "ya-shua",
   "description": "给她一片可以自由浏览、又不会打扰主机的专属空间：浏览器自动化，MCP 12 个工具。",
   "builtin": false,
